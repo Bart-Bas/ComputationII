@@ -205,9 +205,20 @@ void clear_map(Map *map)
     return;
 }
 
-// Function for accessing the right cell in the map
+// Function for accessing the right cell on the map
 Cell *index_map(Map *map, int row, int col)
 {
+    // The world map is wrapped
+    if(row >= map->rows)
+        row -= map->rows;
+    else if(row < 0)
+        row += map->rows;
+
+    if(col >= map->cols)
+        col -= map->cols;
+    else if(col < 0)
+        col += map->cols;
+
     return &map->cells[row * map->cols + col];
 }
 
