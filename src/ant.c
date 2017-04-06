@@ -106,7 +106,7 @@ int read_turn(Map *map)
             }
             else if(strcmp(key_token, "end") == 0)
             {
-                // Game is over (turn -1)
+                // Game is over (set turn to -1)
                 turn = -1;
             }
             else if(strcmp(key_token, "w") == 0)
@@ -114,7 +114,7 @@ int read_turn(Map *map)
                 // Water
                 int row = strtoul(strtok(NULL, " \n"), NULL, 10);
                 int col = strtoul(strtok(NULL, " \n"), NULL, 10);
-                Cell *cell = index_map(map, row, col);
+                Cell *cell = index_cell(map, row, col);
                 cell->type = CELL_WATER;
             }
             else if(strcmp(key_token, "f") == 0)
@@ -122,7 +122,7 @@ int read_turn(Map *map)
                 // Food
                 int row = strtoul(strtok(NULL, " \n"), NULL, 10);
                 int col = strtoul(strtok(NULL, " \n"), NULL, 10);
-                Cell *cell = index_map(map, row, col);
+                Cell *cell = index_cell(map, row, col);
                 cell->type = CELL_FOOD;
             }
             else if(strcmp(key_token, "h") == 0)
@@ -131,7 +131,7 @@ int read_turn(Map *map)
                 int row = strtoul(strtok(NULL, " \n"), NULL, 10);
                 int col = strtoul(strtok(NULL, " \n"), NULL, 10);
                 int owner = strtoul(strtok(NULL, " \n"), NULL, 10);
-                Cell *cell = index_map(map, row, col);
+                Cell *cell = index_cell(map, row, col);
                 cell->type = CELL_HILL;
                 cell->owner = owner;
             }
@@ -141,16 +141,19 @@ int read_turn(Map *map)
                 int row = strtoul(strtok(NULL, " \n"), NULL, 10);
                 int col = strtoul(strtok(NULL, " \n"), NULL, 10);
                 int owner = strtoul(strtok(NULL, " \n"), NULL, 10);
-                Cell *cell = index_map(map, row, col);
-                cell->type = CELL_ANT;
-                cell->owner = owner;
+                Ant *ant = index_ant(map, row, col);
+                ant->type = ANT_LIVE;
+                ant->owner = owner;
             }
             else if(strcmp(key_token, "d") == 0)
             {
                 // Dead ant
-                // int row = strtoul(strtok(NULL, " \n"), NULL, 10);
-                // int col = strtoul(strtok(NULL, " \n"), NULL, 10);
-                // int owner = strtoul(strtok(NULL, " \n"), NULL, 10);
+                int row = strtoul(strtok(NULL, " \n"), NULL, 10);
+                int col = strtoul(strtok(NULL, " \n"), NULL, 10);
+                int owner = strtoul(strtok(NULL, " \n"), NULL, 10);
+                Ant *ant = index_ant(map, row, col);
+                ant->type = ANT_DEAD;
+                ant->owner = owner;
             }
             else if(strcmp(key_token, "go") == 0)
             {
@@ -172,13 +175,17 @@ Map *initialize_map(int rows, int cols)
     map->cols = cols;
 
     // Allocate cell memory
-    // By using calloc everyting initilizes to 0 which means type dirt and owner 0
+    // By using calloc everyting initilizes to 0 which means type CELL_UNSEEN and owner 0
     map->cells = (Cell *) calloc(rows * cols, sizeof(Cell));
+
+    // Allocate ant memory
+    // By using calloc everyting initilizes to 0 which means type ANT_NONE and owner 0
+    map->ants = (Ant *) calloc(rows * cols, sizeof(Ant));
 
     return map;
 }
 
-// Function that clears all possible moving or disappearing cells of the map
+// Function that clears all non static data on the map
 void clear_map(Map *map)
 {
     // Check every cell
@@ -186,19 +193,20 @@ void clear_map(Map *map)
     {
         for(int x = 0; x < map->cols; x++)
         {
-            Cell *currentCell = index_map(map, y, x);
+            Cell *currentCell = index_cell(map, y, x);
+            Ant *currentAnt = index_ant(map, y, x);
 
-            switch(currentCell->type)
-            {
-                case CELL_FOOD:
-                    currentCell->type = CELL_DIRT;
-                    break;
+            // Food may be gone
+            if(currentCell->type == CELL_FOOD)
+                currentCell->type = CELL_DIRT;
 
-                case CELL_ANT:
-                    currentCell->type = CELL_DIRT;
-                    currentCell->owner = 0;
-                    break;
-            }
+            // TODO
+            // Hill may be razed?
+
+            // Ant may have moved or died
+            // Also the stored dead ants are only from the last turn
+            currentAnt->type = ANT_NONE;
+            currentAnt->owner = 0;
         }
     }
 
@@ -206,7 +214,7 @@ void clear_map(Map *map)
 }
 
 // Function for accessing the right cell on the map
-Cell *index_map(Map *map, int row, int col)
+Cell *index_cell(Map *map, int row, int col)
 {
     // The world map is wrapped
     if(row >= map->rows)
@@ -222,11 +230,31 @@ Cell *index_map(Map *map, int row, int col)
     return &map->cells[row * map->cols + col];
 }
 
-// Function for freeing all allocated map and cell memory
+// Function for accessing the right ant on the map
+Ant *index_ant(Map *map, int row, int col)
+{
+    // The world map is wrapped
+    if(row >= map->rows)
+        row -= map->rows;
+    else if(row < 0)
+        row += map->rows;
+
+    if(col >= map->cols)
+        col -= map->cols;
+    else if(col < 0)
+        col += map->cols;
+
+    return &map->ants[row * map->cols + col];
+}
+
+// Function for freeing all allocated map, cell and ant memory
 void cleanup_map(Map *map)
 {
     // Free all allocated cell memory
     free(map->cells);
+
+    // Free all allocated ant memory
+    free(map->ants);
 
     // Free the allocated map memory
     free(map);
@@ -245,33 +273,51 @@ void print_map(Map *map, FILE *outputFile)
         fprintf(outputFile, "m ");
         for(int x = 0; x < map->cols; x++)
         {
-            Cell *currentCell = index_map(map, y, x);
+            Cell *currentCell = index_cell(map, y, x);
+            Ant *currentAnt = index_ant(map, y, x);
 
-            switch(currentCell->type)
+            if(currentCell->type == CELL_UNSEEN && currentAnt->type == ANT_NONE)
             {
-                case CELL_DIRT:
-                    fprintf(outputFile, ".");
-                    break;
-
-                case CELL_WATER:
-                    fprintf(outputFile, "%%");
-                    break;
-
-                case CELL_FOOD:
-                    fprintf(outputFile, "*");
-                    break;
-
-                case CELL_HILL:
-                    fprintf(outputFile, "%u", currentCell->owner);
-                    break;
-
-                case CELL_ANT:
-                    fprintf(outputFile, "%c", (currentCell->owner + 97));    // 97-106 is a-j in ASCII
-                    break;
-
-                case CELL_ANT_ON_OWN_HILL:
-                    fprintf(outputFile, "%c", (currentCell->owner + 65));    // 65-74 is A-J in ASCII
-                    break;
+                // Unseen territory
+                fprintf(outputFile, "?");
+            }
+            if(currentCell->type == CELL_DIRT && currentAnt->type == ANT_NONE)
+            {
+                // Land
+                fprintf(outputFile, ".");
+            }
+            else if(currentCell->type == CELL_WATER)
+            {
+                // Water
+                fprintf(outputFile, "%%");
+            }
+            else if(currentCell->type == CELL_FOOD)
+            {
+                // Food
+                fprintf(outputFile, "*");
+            }
+            else if(currentCell->type == CELL_HILL && currentAnt->type == ANT_NONE)
+            {
+                // Hill
+                fprintf(outputFile, "%u", currentAnt->owner);
+            }
+            else if(currentAnt->type == ANT_DEAD)
+            {
+                // Dead ant
+                fprintf(outputFile, "!");
+            }
+            else if(currentAnt->type == ANT_LIVE)
+            {
+                if(currentCell->type == CELL_HILL)
+                {
+                    // Live ant on own hill
+                    fprintf(outputFile, "%c", (currentAnt->owner + 65));    // 65-74 is A-J in ASCII
+                }
+                else
+                {
+                    // Live ant
+                    fprintf(outputFile, "%c", (currentAnt->owner + 97));    // 97-106 is a-j in ASCII
+                }
             }
         }
         fprintf(outputFile, "\n");

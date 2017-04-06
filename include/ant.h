@@ -7,13 +7,20 @@
 // Enums
 typedef enum CellType
 {
+    CELL_UNSEEN,
     CELL_DIRT,
     CELL_WATER,
     CELL_FOOD,
-    CELL_HILL,
-    CELL_ANT,
-    CELL_ANT_ON_OWN_HILL
+    CELL_HILL
 } CellType;
+
+typedef enum AntType
+{
+    ANT_NONE,
+    ANT_LIVE,
+    ANT_DEAD
+
+} AntType;
 
 // Data structures
 typedef struct Cell
@@ -22,9 +29,16 @@ typedef struct Cell
     unsigned int owner;
 } Cell;
 
+typedef struct Ant
+{
+    AntType type;
+    unsigned int owner;
+} Ant;
+
 typedef struct Map
 {
     Cell *cells;
+    Ant *ants;
     unsigned int rows;
     unsigned int cols;
 } Map;
@@ -50,7 +64,8 @@ int read_turn();
 
 Map *initialize_map(int rows, int cols);
 void clear_map(Map *map);
-Cell *index_map(Map *map, int row, int col);
+Cell *index_cell(Map *map, int row, int col);
+Ant *index_ant(Map *map, int row, int col);
 void cleanup_map();
 void print_map(Map *map, FILE *outputFile);
 
