@@ -61,6 +61,8 @@ typedef struct AntItem
 {
     unsigned int row;
     unsigned int col;
+    char lastDirection;
+    int lastTurnMoved;
 } AntItem;
 
 typedef struct AntNode
@@ -89,10 +91,12 @@ void cleanup_map();
 void print_map(Map *map, FILE *outputFile);
 AntList *initialize_ant_list();
 void cleanup_ant_list(AntList *antList);
+void print_ant_list(AntList *antList, FILE *outputFile);
 void insert_ant(AntList *antList, int row, int col);
 void remove_ant(AntList *antList, AntNode *delNode);
 AntNode *find_ant(AntList *antList, int row, int col);
-int move_ant(Map *map, AntItem *antItem, char direction);
+int move_ant(Map *map, AntItem *antItem, char direction, int turn);
 int check_move(Map *map, int newRow, int newCol);
+void random_move_ant(Map *map, AntItem *antItem, int turn, int chances);
 
 #endif // _ANT_H_

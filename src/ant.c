@@ -15,11 +15,11 @@ GameSettings *initialize_game()
     // Read line by line
     while(getline(&line, &lineLength, stdin) != -1)
     {
-        // Proces the input
+        // Process the input
         // Skip empty lines
         if(strcmp(line, "\n") != 0)
         {
-            // Seperate the key token
+            // Separate the key token
             char *key_token = strtok(line, " \n");
 
             // Compare the key token and initialize the right setting
@@ -92,11 +92,11 @@ int read_turn(Map *map, AntList *ownLiveAnts)
     // Read line by line
     while(getline(&line, &lineLength, stdin) != -1)
     {
-        // Proces the input
+        // Process the input
         // Skip empty lines
         if(strcmp(line, "\n") != 0)
         {
-            // Seperate the key token
+            // Separate the key token
             char *key_token = strtok(line, " \n");
 
             // Compare the key token and initialize the right setting
@@ -188,11 +188,11 @@ Map *initialize_map(int rows, int cols)
     map->cols = cols;
 
     // Allocate cell memory
-    // By using calloc everyting initilizes to 0 which means type CELL_DIRT and owner 0
+    // By using calloc everything initializes to 0 which means type CELL_DIRT and owner 0
     map->cells = (Cell *) calloc(rows * cols, sizeof(Cell));
 
     // Allocate ant memory
-    // By using calloc everyting initilizes to 0 which means type ANT_NONE and owner 0
+    // By using calloc everything initializes to 0 which means type ANT_NONE and owner 0
     map->ants = (Ant *) calloc(rows * cols, sizeof(Ant));
 
     return map;
@@ -214,8 +214,8 @@ void clear_map(Map *map)
                 currentCell->type = CELL_DIRT;
 
             // Hill may be razed
-            if(currentCell->type == CELL_HILL)
-                currentCell->type = CELL_DIRT;
+            //if(currentCell->type == CELL_HILL)
+            //    currentCell->type = CELL_DIRT;
 
             // Ant may have moved or died
             // Also the stored dead ants are only from the last turn
@@ -385,6 +385,39 @@ void cleanup_ant_list(AntList *antList)
     return;
 }
 
+// Function that prints out a visual representation of the list of ants
+void print_ant_list(AntList *antList, FILE *outputFile)
+{
+    // Only if there are ant nodes
+    if(antList->headNode != NULL)
+    {
+        fprintf(outputFile, "Number of ants in list: %d\n", antList->counter);
+
+        AntNode *currentNode = antList->headNode;
+
+        // Loop through the list
+        do
+        {
+            AntItem *antItem = currentNode->antItem;
+
+            if(currentNode == antList->headNode)
+                fprintf(outputFile, "HeadNode: %p\n", currentNode);
+            else
+                fprintf(outputFile, "Node: %p\n", currentNode);
+
+            fprintf(outputFile, "  ->nextnode: %p\n", currentNode->nextNode);
+            fprintf(outputFile, "  ->antitem: %p\n", currentNode->antItem);
+            fprintf(outputFile, "      ->row: %d\n", currentNode->antItem->row);
+            fprintf(outputFile, "      ->col: %d\n", currentNode->antItem->col);
+            fprintf(outputFile, "      ->ld: %c\n", currentNode->antItem->lastDirection);
+            fprintf(outputFile, "      ->lt: %d\n", currentNode->antItem->lastTurnMoved);
+
+            // Go to the next node
+            currentNode = currentNode->nextNode;
+        } while(currentNode != antList->headNode);
+    }
+}
+
 // Function for inserting an ant to the list
 void insert_ant(AntList *antList, int row, int col)
 {
@@ -394,6 +427,7 @@ void insert_ant(AntList *antList, int row, int col)
     newNode->antItem = newItem;
     newItem->row = row;
     newItem->col = col;
+    newItem->lastDirection = 0;
 
     // Insert it in the list
     if(antList->headNode == NULL)
@@ -405,7 +439,7 @@ void insert_ant(AntList *antList, int row, int col)
     else
     {
         // It was not the first node
-        // Insert it between de head node and the node after the head node to keep the circle complete
+        // Insert it between the head node and the node after the head node to keep the circle complete
         newNode->nextNode = antList->headNode->nextNode;
         antList->headNode->nextNode = newNode;
     }
@@ -422,18 +456,30 @@ void remove_ant(AntList *antList, AntNode *delNode)
     // Only if the node exists
     if(delNode != NULL)
     {
-        // Delete the node by copying the data from the next node to the current node and removing the next node
-        // Must be done because you don't have pointers to the prev node
-        // Be carefull, external pointers become invalid in this way!
-        AntNode *tempNode = delNode->nextNode;
-        free(delNode->antItem);
-        delNode->antItem = delNode->nextNode->antItem;
-        delNode->nextNode = delNode->nextNode->nextNode;
-        free(tempNode);
-
-        // Change the head node if del node was the last node
-        if(tempNode == antList->headNode)
+        // This is the last node of the list
+        if(antList->headNode == antList->headNode->nextNode)
+        {
+            free(antList->headNode->antItem);
+            free(antList->headNode);
             antList->headNode = NULL;
+        }
+        else
+        {
+            // Delete the node by copying the data from the next node to the current node and removing the next node
+            // Must be done because you don't have pointers to the previous node
+            // Be careful, external pointers become invalid in this way!
+
+            AntNode *tempNode = delNode->nextNode;
+            free(delNode->antItem);
+            delNode->antItem = delNode->nextNode->antItem;
+            delNode->nextNode = delNode->nextNode->nextNode;
+
+            // Change the head node if necessary
+            if(antList->headNode == tempNode)
+                antList->headNode = tempNode->nextNode;
+
+            free(tempNode);
+        }
 
         // Update the list node counter
         antList->counter--;
@@ -469,7 +515,7 @@ AntNode *find_ant(AntList *antList, int row, int col)
 
 // Function that gives the server a move command and updates the ant item in the list and the map with the ants new position
 // If the move is not valid it returns 0, makes no changes and doesn't send a move command
-int move_ant(Map *map, AntItem *antItem, char direction)
+int move_ant(Map *map, AntItem *antItem, char direction, int turn)
 {
     int row = antItem->row;
     int col = antItem->col;
@@ -538,6 +584,15 @@ int move_ant(Map *map, AntItem *antItem, char direction)
             // Change nothing and return 0 because of invalid move
             return 0;
     }
+    else
+    {
+        // Change nothing and return 0 because of invalid move
+        return 0;
+    }
+
+    // Update the other ant properties
+    antItem->lastTurnMoved = turn;
+    antItem->lastDirection = direction;
 
     // Send move command to the server
     printf("o %u %u %c\n", row, col, direction);
@@ -554,4 +609,38 @@ int check_move(Map *map, int newRow, int newCol)
         return 1;
 
     return 0;
+}
+
+// Function to give an ant x chances to take a random valid direction
+void random_move_ant(Map *map, AntItem *antItem, int turn, int chances)
+{
+    int randNumber = rand() % 4;
+
+    for(int i = 0; i < chances; i++)
+    {
+        if(randNumber == 0)
+        {
+            if(move_ant(map, antItem, 'N', turn));
+                break;
+        }
+        else if(randNumber == 1)
+        {
+            if(move_ant(map, antItem, 'E', turn));
+                break;
+        }
+        else if(randNumber == 2)
+        {
+            if(move_ant(map, antItem, 'S', turn));
+                break;
+        }
+        else if(randNumber == 3)
+        {
+            if(move_ant(map, antItem, 'W', turn));
+                break;
+        }
+
+        randNumber = rand() % 4;
+    }
+
+    return;
 }

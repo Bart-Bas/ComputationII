@@ -1,13 +1,18 @@
 #include "../include/ant.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
+// Toggle all prints to stderr
 #define _DEBUG_
+
+// AI parameters
+#define RANDOM_CHANCES 5
 
 // Global variables
 Map *map;
 GameSettings *gameSettings;
-int turn = 1;
+int turn;
 AntList *ownLiveAnts;
 
 // Function prototypes
@@ -20,6 +25,9 @@ int main()
     gameSettings = initialize_game();
     map = initialize_map(gameSettings->rows, gameSettings->cols);
     ownLiveAnts = initialize_ant_list();
+
+    // Seed the random number generator
+    srand(time(NULL));
 
     #ifdef _DEBUG_
     fprintf(stderr, "Game initialized!\n\n");
@@ -46,7 +54,8 @@ int main()
         #ifdef _DEBUG_
         fprintf(stderr, "Turn: %d\n", turn);
         fprintf(stderr, "Map and list updated!\n");
-        print_map(map, stderr);
+        print_ant_list(ownLiveAnts, stderr);
+        //print_map(map, stderr);
         #endif
 
         // Send move commands to the server
@@ -85,35 +94,17 @@ void send_commands()
         // Loop through the list with all own live ants
         do
         {
-            int row = currentNode->antItem->row;
-            int col = currentNode->antItem->col;
-            int randNumber = rand() % 4;
+            AntItem *antItem = currentNode->antItem;
 
-            // 5 Chances to take a random valid direction
-            for(int i = 0; i < 5; i++)
+            // Try the same direction as the previous turn
+            if(move_ant(map, antItem, antItem->lastDirection, turn))
             {
-                if(randNumber == 0)
-                {
-                    if(move_ant(map, currentNode->antItem, 'N'));
-                        break;
-                }
-                else if(randNumber == 1)
-                {
-                    if(move_ant(map, currentNode->antItem, 'E'));
-                        break;
-                }
-                else if(randNumber == 2)
-                {
-                    if(move_ant(map, currentNode->antItem, 'S'));
-                        break;
-                }
-                else if(randNumber == 3)
-                {
-                    if(move_ant(map, currentNode->antItem, 'W'));
-                        break;
-                }
-
-                randNumber = rand() % 4;
+                
+            }
+            // Try a new random direction
+            else
+            {
+                random_move_ant(map, antItem, turn, RANDOM_CHANCES);
             }
 
             // Go to the next node
