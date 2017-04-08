@@ -59,10 +59,14 @@ typedef struct GameSettings
 // Singly Circular Linked List of ants
 typedef struct AntItem
 {
+    int id;
     unsigned int row;
     unsigned int col;
     char lastDirection;
     int lastTurnMoved;
+    int hasGoal;
+    unsigned int rowGoal;
+    unsigned int colGoal;
 } AntItem;
 
 typedef struct AntNode
@@ -80,8 +84,8 @@ typedef struct AntList
 
 // Function prototypes
 GameSettings *initialize_game();
-void cleanup_game();
-int read_turn();
+void cleanup_game(GameSettings *gameSettings);
+int read_turn(Map *map, AntList *ownLiveAnts, int *antIds);
 Map *initialize_map(int rows, int cols);
 void clear_map(Map *map);
 Cell *index_cell(Map *map, int row, int col);
@@ -92,11 +96,14 @@ void print_map(Map *map, FILE *outputFile);
 AntList *initialize_ant_list();
 void cleanup_ant_list(AntList *antList);
 void print_ant_list(AntList *antList, FILE *outputFile);
-void insert_ant(AntList *antList, int row, int col);
+void insert_ant(AntList *antList, int row, int col, int id);
 void remove_ant(AntList *antList, AntNode *delNode);
 AntNode *find_ant(AntList *antList, int row, int col);
 int move_ant(Map *map, AntItem *antItem, char direction, int turn);
 int check_move(Map *map, int newRow, int newCol);
 void random_move_ant(Map *map, AntItem *antItem, int turn, int chances);
+int check_for_goal(Map *map, AntItem *antItem, int goalRadius);
+int check_for_goal_reachable(Map *map, AntItem *antItem, int goalRadius);
+void direction_for_goal(Map *map, AntItem *antItem, char *direction1, char *direction2);
 
 #endif // _ANT_H_

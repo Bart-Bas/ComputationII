@@ -3,7 +3,7 @@
 ./lib/libant.a: ./obj/ant.o
 	ar rcs ./lib/libant.a ./obj/ant.o
 antbot: ./src/main.c ./lib/libant.a
-	gcc -o ./build/antbot -static ./src/main.c -L./lib -I./include -lant -g
+	gcc -o ./build/antbot -static ./src/main.c -L./lib -I./include -lant -lm -g
 
 .PHONY: clean
 clean:

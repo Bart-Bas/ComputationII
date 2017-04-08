@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 // Function that reads the initialization data from the server
 GameSettings *initialize_game()
@@ -81,7 +82,7 @@ void cleanup_game(GameSettings *gameSettings)
 }
 
 // Function that reads the data at the beginning of each turn
-int read_turn(Map *map, AntList *ownLiveAnts)
+int read_turn(Map *map, AntList *ownLiveAnts, int *antIds)
 {
     int turn;
 
@@ -145,14 +146,27 @@ int read_turn(Map *map, AntList *ownLiveAnts)
                 Ant *ant = index_ant(map, row, col);
                 ant->type = ANT_LIVE;
                 ant->owner = owner;
+                Cell *cell = index_cell(map, row, col);
 
-                // Add own live ants from the list
-                // Add only ants that may be new (spawn at an own hill)
-                // Ant didn't exist yet (an existing ant could walk over the hill)
-                if(ant->owner == 0)
-                    if(index_cell(map, row, col)->type == CELL_HILL)
+                if(ant->owner == 0 && cell->type == CELL_HILL)
+                {
+                    // Add own live ants from the list
+                    // Add only ants that may be new (spawn at an own hill)
+                    // Ant didn't exist yet (an existing ant could walk over the hill)
+                    if(cell->owner == 0)
+                    {
                         if(find_ant(ownLiveAnts, row, col) == NULL)
-                            insert_ant(ownLiveAnts, row, col);
+                        {
+                            insert_ant(ownLiveAnts, row, col, *antIds);
+                            (*antIds)++;
+                        }
+                    }
+                    // Change CELL_HILL into CELL_DIRT if an own ant walks over an enemy hill
+                    else
+                    {
+                        cell->type = CELL_DIRT;
+                    }
+                }
             }
             else if(strcmp(key_token, "d") == 0)
             {
@@ -212,10 +226,6 @@ void clear_map(Map *map)
             // Food may be gone
             if(currentCell->type == CELL_FOOD)
                 currentCell->type = CELL_DIRT;
-
-            // Hill may be razed
-            //if(currentCell->type == CELL_HILL)
-            //    currentCell->type = CELL_DIRT;
 
             // Ant may have moved or died
             // Also the stored dead ants are only from the last turn
@@ -310,7 +320,7 @@ void print_map(Map *map, FILE *outputFile)
             else if(currentCell->type == CELL_HILL && currentAnt->type == ANT_NONE)
             {
                 // Hill
-                fprintf(outputFile, "%u", currentAnt->owner);
+                fprintf(outputFile, "%u", currentCell->owner);
             }
             else if(currentAnt->type == ANT_DEAD)
             {
@@ -319,10 +329,10 @@ void print_map(Map *map, FILE *outputFile)
             }
             else if(currentAnt->type == ANT_LIVE)
             {
-                if(currentCell->type == CELL_HILL)
+                if(currentCell->type == CELL_HILL && currentCell->owner == currentAnt->owner)
                 {
                     // Live ant on own hill
-                    fprintf(outputFile, "%c", (currentAnt->owner + 65));    // 65-74 is A-J in ASCII
+                    fprintf(outputFile, "%c", (currentCell->owner + 65));    // 65-74 is A-J in ASCII
                 }
                 else
                 {
@@ -407,10 +417,14 @@ void print_ant_list(AntList *antList, FILE *outputFile)
 
             fprintf(outputFile, "  ->nextnode: %p\n", currentNode->nextNode);
             fprintf(outputFile, "  ->antitem: %p\n", currentNode->antItem);
+            fprintf(outputFile, "      ->id: %d\n", currentNode->antItem->id);
             fprintf(outputFile, "      ->row: %d\n", currentNode->antItem->row);
             fprintf(outputFile, "      ->col: %d\n", currentNode->antItem->col);
             fprintf(outputFile, "      ->ld: %c\n", currentNode->antItem->lastDirection);
             fprintf(outputFile, "      ->lt: %d\n", currentNode->antItem->lastTurnMoved);
+            fprintf(outputFile, "      ->hg: %d\n", currentNode->antItem->hasGoal);
+            fprintf(outputFile, "      ->rg: %d\n", currentNode->antItem->rowGoal);
+            fprintf(outputFile, "      ->cg: %d\n", currentNode->antItem->colGoal);
 
             // Go to the next node
             currentNode = currentNode->nextNode;
@@ -419,15 +433,19 @@ void print_ant_list(AntList *antList, FILE *outputFile)
 }
 
 // Function for inserting an ant to the list
-void insert_ant(AntList *antList, int row, int col)
+void insert_ant(AntList *antList, int row, int col, int id)
 {
     // Make a new node with item
     AntNode *newNode = (AntNode *) malloc(sizeof(AntNode));
     AntItem *newItem = (AntItem *) malloc(sizeof(AntItem));
     newNode->antItem = newItem;
+    newItem->id = id;
     newItem->row = row;
     newItem->col = col;
     newItem->lastDirection = 0;
+    newItem->hasGoal = 0;
+    newItem->rowGoal = row;
+    newItem->colGoal = col;
 
     // Insert it in the list
     if(antList->headNode == NULL)
@@ -640,6 +658,198 @@ void random_move_ant(Map *map, AntItem *antItem, int turn, int chances)
         }
 
         randNumber = rand() % 4;
+    }
+
+    return;
+}
+
+// Function that checks if CELL_FOOD or CELL_HILL is nearby
+// Returns 1 if there was a goal
+int check_for_goal(Map *map, AntItem *antItem, int goalRadius)
+{
+    int randNumber = rand() % 4;
+    int rowMin = antItem->row - goalRadius;
+    int rowMax = antItem->row + goalRadius;
+    int colMin = antItem->col - goalRadius;
+    int colMax = antItem->col + goalRadius;
+
+    // Different orders to search the cells so that not every ant finds the same goal
+    if(randNumber == 0)
+    {
+        for(int y = rowMin; y < rowMax; y++)
+        {
+            for(int x = colMin; x < colMax; x++)
+            {
+                Cell *goalCell = index_cell(map, wrap_number(y, map->rows), wrap_number(x, map->cols));
+
+                // Check if cell is a valid goal
+                if((goalCell->type == CELL_HILL && goalCell->owner != 0) || goalCell->type == CELL_FOOD)
+                {
+                    antItem->rowGoal = wrap_number(y, map->rows);
+                    antItem->colGoal = wrap_number(x, map->cols);
+                    if(check_for_goal_reachable(map, antItem, goalRadius))
+                        return 1;
+                }
+            }
+        }
+    }
+    else if(randNumber == 1)
+    {
+        for(int y = rowMax; y > rowMin; y--)
+        {
+            for(int x = colMin; x < colMax; x++)
+            {
+                Cell *goalCell = index_cell(map, wrap_number(y, map->rows), wrap_number(x, map->cols));
+
+                // Check if cell is a valid goal
+                if((goalCell->type == CELL_HILL && goalCell->owner != 0) || goalCell->type == CELL_FOOD)
+                {
+                    antItem->rowGoal = wrap_number(y, map->rows);
+                    antItem->colGoal = wrap_number(x, map->cols);
+                    if(check_for_goal_reachable(map, antItem, goalRadius))
+                        return 1;
+                }
+            }
+        }
+    }
+    else if(randNumber == 2)
+    {
+        for(int y = rowMin; y < rowMax; y++)
+        {
+            for(int x = colMax; x > colMin; x--)
+            {
+                Cell *goalCell = index_cell(map, wrap_number(y, map->rows), wrap_number(x, map->cols));
+
+                // Check if cell is a valid goal
+                if((goalCell->type == CELL_HILL && goalCell->owner != 0) || goalCell->type == CELL_FOOD)
+                {
+                    antItem->rowGoal = wrap_number(y, map->rows);
+                    antItem->colGoal = wrap_number(x, map->cols);
+                    if(check_for_goal_reachable(map, antItem, goalRadius))
+                        return 1;
+                }
+            }
+        }
+    }
+    else if(randNumber == 3)
+    {
+        for(int y = rowMax; y > rowMin; y--)
+        {
+            for(int x = colMax; x > colMin; x--)
+            {
+                Cell *goalCell = index_cell(map, wrap_number(y, map->rows), wrap_number(x, map->cols));
+
+                // Check if cell is a valid goal
+                if((goalCell->type == CELL_HILL && goalCell->owner != 0) || goalCell->type == CELL_FOOD)
+                {
+                    antItem->rowGoal = wrap_number(y, map->rows);
+                    antItem->colGoal = wrap_number(x, map->cols);
+                    if(check_for_goal_reachable(map, antItem, goalRadius))
+                        return 1;
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+// Function that checks if a goal is reachable (no CELL_WATER in the way)
+// Returns 1 if the goal is reachable
+int check_for_goal_reachable(Map *map, AntItem *antItem, int goalRadius)
+{
+    char direction1;
+    char direction2;
+    direction_for_goal(map, antItem, &direction1, &direction2);
+
+    if(direction1 == 'N' || direction2 == 'N')
+        for(int y = 0; y < goalRadius; y++)
+            for(int x = (antItem->col - 1); x < (antItem->col + 1); x++)
+                if(index_cell(map, wrap_number(antItem->row - y, map->rows), wrap_number(x, map->cols))->type == CELL_WATER)
+                    return 0;
+
+    if(direction1 == 'E' || direction2 == 'E')
+        for(int y = 0; y < goalRadius; y++)
+            for(int x = (antItem->row - 1); x < (antItem->row + 1); x++)
+                if(index_cell(map, wrap_number(x, map->rows), wrap_number(antItem->col + y, map->rows))->type == CELL_WATER)
+                    return 0;
+
+    if(direction1 == 'S' || direction2 == 'S')
+        for(int y = 0; y < goalRadius; y++)
+            for(int x = (antItem->col - 1); x < (antItem->col + 1); x++)
+                if(index_cell(map, wrap_number(antItem->row + y, map->rows), wrap_number(x, map->cols))->type == CELL_WATER)
+                    return 0;
+
+    if(direction1 == 'W' || direction2 == 'W')
+        for(int y = 0; y < goalRadius; y++)
+            for(int x = (antItem->row - 1); x < (antItem->row + 1); x++)
+                if(index_cell(map, wrap_number(x, map->rows), wrap_number(antItem->col - y, map->rows))->type == CELL_WATER)
+                    return 0;
+
+    return 1;
+}
+
+// Function that determines the right direction to the goal
+void direction_for_goal(Map *map, AntItem *antItem, char *direction1, char *direction2)
+{
+    int rowDiffUnwrap = abs(antItem->row - antItem->rowGoal);
+    int rowDiffWrap = abs(map->rows - rowDiffUnwrap);
+    int colDiffUnwrap = abs(antItem->col - antItem->colGoal);
+    int colDiffWrap = abs(map->cols - colDiffUnwrap);
+    char horizontalDirection;
+    char verticalDirection;
+
+    // Calculate vertical direction
+    if(antItem->row > antItem->rowGoal)
+    {
+        // Goal in N direction
+        if(rowDiffUnwrap > rowDiffWrap)
+            // It is shorter to pick the wrapped route
+            verticalDirection = 'S';
+        else
+            verticalDirection = 'N';
+    }
+    else
+    {
+        // Goal in S direction
+        if(rowDiffUnwrap > rowDiffWrap)
+            // It is shorter to pick the wrapped route
+            verticalDirection = 'N';
+        else
+            verticalDirection = 'S';
+    }
+
+    // Calculate horizontal direction
+    if(antItem->col > antItem->colGoal)
+    {
+        // Goal in W direction
+        if(colDiffUnwrap > colDiffWrap)
+            // It is shorter to pick the wrapped route
+            horizontalDirection = 'E';
+        else
+            horizontalDirection = 'W';
+    }
+    else
+    {
+        // Goal in E direction
+        if(colDiffUnwrap > colDiffWrap)
+            // It is shorter to pick the wrapped route
+            horizontalDirection = 'W';
+        else
+            horizontalDirection = 'E';
+    }
+
+    // Give vertical movement the biggest priority
+    if(fmin(rowDiffUnwrap, rowDiffWrap) > fmin(colDiffUnwrap, colDiffWrap))
+    {
+        *direction1 = verticalDirection;
+        *direction2 = horizontalDirection;
+    }
+    // Give horizontal movement the biggest priority
+    else
+    {
+        *direction1 = horizontalDirection;
+        *direction2 = verticalDirection;
     }
 
     return;
