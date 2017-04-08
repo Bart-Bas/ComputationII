@@ -81,7 +81,7 @@ void cleanup_game(GameSettings *gameSettings)
 }
 
 // Function that reads the data at the beginning of each turn
-int read_turn(Map *map)
+int read_turn(Map *map, AntList *ownLiveAnts)
 {
     int turn;
 
@@ -108,6 +108,7 @@ int read_turn(Map *map)
             {
                 // Game is over (set turn to -1)
                 turn = -1;
+                break;
             }
             else if(strcmp(key_token, "w") == 0)
             {
@@ -144,6 +145,14 @@ int read_turn(Map *map)
                 Ant *ant = index_ant(map, row, col);
                 ant->type = ANT_LIVE;
                 ant->owner = owner;
+
+                // Add own live ants from the list
+                // Add only ants that may be new (spawn at an own hill)
+                // Ant didn't exist yet (an existing ant could walk over the hill)
+                if(ant->owner == 0)
+                    if(index_cell(map, row, col)->type == CELL_HILL)
+                        if(find_ant(ownLiveAnts, row, col) == NULL)
+                            insert_ant(ownLiveAnts, row, col);
             }
             else if(strcmp(key_token, "d") == 0)
             {
@@ -154,6 +163,10 @@ int read_turn(Map *map)
                 Ant *ant = index_ant(map, row, col);
                 ant->type = ANT_DEAD;
                 ant->owner = owner;
+
+                // Delete own dead ants from the list
+                if(ant->owner == 0)
+                    remove_ant(ownLiveAnts, find_ant(ownLiveAnts, row, col));
             }
             else if(strcmp(key_token, "go") == 0)
             {
@@ -175,7 +188,7 @@ Map *initialize_map(int rows, int cols)
     map->cols = cols;
 
     // Allocate cell memory
-    // By using calloc everyting initilizes to 0 which means type CELL_UNSEEN and owner 0
+    // By using calloc everyting initilizes to 0 which means type CELL_DIRT and owner 0
     map->cells = (Cell *) calloc(rows * cols, sizeof(Cell));
 
     // Allocate ant memory
@@ -200,8 +213,9 @@ void clear_map(Map *map)
             if(currentCell->type == CELL_FOOD)
                 currentCell->type = CELL_DIRT;
 
-            // TODO
-            // Hill may be razed?
+            // Hill may be razed
+            if(currentCell->type == CELL_HILL)
+                currentCell->type = CELL_DIRT;
 
             // Ant may have moved or died
             // Also the stored dead ants are only from the last turn
@@ -217,15 +231,8 @@ void clear_map(Map *map)
 Cell *index_cell(Map *map, int row, int col)
 {
     // The world map is wrapped
-    if(row >= map->rows)
-        row -= map->rows;
-    else if(row < 0)
-        row += map->rows;
-
-    if(col >= map->cols)
-        col -= map->cols;
-    else if(col < 0)
-        col += map->cols;
+    row = wrap_number(row, map->rows);
+    col = wrap_number(col, map->cols);
 
     return &map->cells[row * map->cols + col];
 }
@@ -234,17 +241,21 @@ Cell *index_cell(Map *map, int row, int col)
 Ant *index_ant(Map *map, int row, int col)
 {
     // The world map is wrapped
-    if(row >= map->rows)
-        row -= map->rows;
-    else if(row < 0)
-        row += map->rows;
-
-    if(col >= map->cols)
-        col -= map->cols;
-    else if(col < 0)
-        col += map->cols;
+    row = wrap_number(row, map->rows);
+    col = wrap_number(col, map->cols);
 
     return &map->ants[row * map->cols + col];
+}
+
+// Function that wraps a row or col number
+int wrap_number(int input, int max)
+{
+    if(input >= max)
+        return input - max;
+    if(input < 0)
+        return input + max;
+
+    return input;
 }
 
 // Function for freeing all allocated map, cell and ant memory
@@ -281,7 +292,7 @@ void print_map(Map *map, FILE *outputFile)
                 // Unseen territory
                 fprintf(outputFile, "?");
             }
-            if(currentCell->type == CELL_DIRT && currentAnt->type == ANT_NONE)
+            else if(currentCell->type == CELL_DIRT && currentAnt->type == ANT_NONE)
             {
                 // Land
                 fprintf(outputFile, ".");
@@ -326,4 +337,221 @@ void print_map(Map *map, FILE *outputFile)
     fflush(outputFile);
 
     return;
+}
+
+// Function for allocating and initializing a list of ants
+AntList *initialize_ant_list()
+{
+    AntList *antList = (AntList *) calloc(1, sizeof(AntList));
+    antList->counter = 0;
+    return antList;
+}
+
+// Function for freeing all allocated memory for the list
+void cleanup_ant_list(AntList *antList)
+{
+    // Only if there are nodes in the list
+    if(antList->headNode != NULL)
+    {
+        // Set the first node to delete
+        AntNode *delNode = antList->headNode->nextNode;
+        antList->headNode->nextNode = NULL;
+
+        // Delete all nodes
+        while(delNode != NULL)
+        {
+            // Remember the next node
+            AntNode *nextNode = delNode->nextNode;
+
+            // Free the item of the node
+            free(delNode->antItem);
+            // Free the node itself
+            free(delNode);
+
+            // Set the next node
+            delNode = nextNode;
+        }
+
+        // Set the head pointer to NULL to indicate empty list
+        antList->headNode = NULL;
+
+        // Reset the list counter
+        antList->counter = 0;
+    }
+
+    // Free the list itself
+    free(antList);
+
+    return;
+}
+
+// Function for inserting an ant to the list
+void insert_ant(AntList *antList, int row, int col)
+{
+    // Make a new node with item
+    AntNode *newNode = (AntNode *) malloc(sizeof(AntNode));
+    AntItem *newItem = (AntItem *) malloc(sizeof(AntItem));
+    newNode->antItem = newItem;
+    newItem->row = row;
+    newItem->col = col;
+
+    // Insert it in the list
+    if(antList->headNode == NULL)
+    {
+        // It was the first node
+        newNode->nextNode = newNode;
+        antList->headNode = newNode;
+    }
+    else
+    {
+        // It was not the first node
+        // Insert it between de head node and the node after the head node to keep the circle complete
+        newNode->nextNode = antList->headNode->nextNode;
+        antList->headNode->nextNode = newNode;
+    }
+
+    // Update the list node counter
+    antList->counter++;
+
+    return;
+}
+
+// Function for removing an ant from the list
+void remove_ant(AntList *antList, AntNode *delNode)
+{
+    // Only if the node exists
+    if(delNode != NULL)
+    {
+        // Delete the node by copying the data from the next node to the current node and removing the next node
+        // Must be done because you don't have pointers to the prev node
+        // Be carefull, external pointers become invalid in this way!
+        AntNode *tempNode = delNode->nextNode;
+        free(delNode->antItem);
+        delNode->antItem = delNode->nextNode->antItem;
+        delNode->nextNode = delNode->nextNode->nextNode;
+        free(tempNode);
+
+        // Change the head node if del node was the last node
+        if(tempNode == antList->headNode)
+            antList->headNode = NULL;
+
+        // Update the list node counter
+        antList->counter--;
+    }
+
+    return;
+}
+
+// Function for searching an ant with particular coordinates in the list
+AntNode *find_ant(AntList *antList, int row, int col)
+{
+    // Only if there are nodes in the list
+    if(antList->headNode != NULL)
+    {
+        AntNode *currentNode = antList->headNode;
+
+        // Loop through the list
+        do
+        {
+            // Check the coordinates
+            if(currentNode->antItem->row == row && currentNode->antItem->col == col)
+                return currentNode;
+
+        // Go to the next node
+        currentNode = currentNode->nextNode;
+
+        } while(currentNode != antList->headNode);
+    }
+
+    // Not found, return 0
+    return NULL;
+}
+
+// Function that gives the server a move command and updates the ant item in the list and the map with the ants new position
+// If the move is not valid it returns 0, makes no changes and doesn't send a move command
+int move_ant(Map *map, AntItem *antItem, char direction)
+{
+    int row = antItem->row;
+    int col = antItem->col;
+
+    if(direction == 'N')
+    {
+        int newRow = wrap_number(antItem->row - 1, map->rows);
+
+        if(check_move(map, newRow, col))
+        {
+            // Update the position of the ant in the list
+            antItem->row = newRow;
+            // Update the map
+            index_ant(map, row, col)->type = ANT_NONE;
+            index_ant(map, newRow, col)->type = ANT_LIVE;
+        }
+        else
+            // Change nothing and return 0 because of invalid move
+            return 0;
+    }
+    else if(direction == 'E')
+    {
+        int newCol = wrap_number(antItem->col + 1, map->cols);
+
+        if(check_move(map, row, newCol))
+        {
+            // Update the position of the ant in the list
+            antItem->col = newCol;
+            // Update the map
+            index_ant(map, row, col)->type = ANT_NONE;
+            index_ant(map, row, newCol)->type = ANT_LIVE;
+        }
+        else
+            // Change nothing and return 0 because of invalid move
+            return 0;
+    }
+    else if(direction == 'S')
+    {
+        int newRow = wrap_number(antItem->row + 1, map->rows);
+
+        if(check_move(map, newRow, col))
+        {
+            // Update the position of the ant in the list
+            antItem->row = newRow;
+            // Update the map
+            index_ant(map, row, col)->type = ANT_NONE;
+            index_ant(map, newRow, col)->type = ANT_LIVE;
+        }
+        else
+            // Change nothing and return 0 because of invalid move
+            return 0;
+    }
+    else if(direction == 'W')
+    {
+        int newCol = wrap_number(antItem->col - 1, map->cols);
+
+        if(check_move(map, row, newCol))
+        {
+            // Update the position of the ant in the list
+            antItem->col = newCol;
+            // Update the map
+            index_ant(map, row, col)->type = ANT_NONE;
+            index_ant(map, row, newCol)->type = ANT_LIVE;
+        }
+        else
+            // Change nothing and return 0 because of invalid move
+            return 0;
+    }
+
+    // Send move command to the server
+    printf("o %u %u %c\n", row, col, direction);
+    fflush(stdout);
+
+    return 1;
+}
+
+// Function to check if a move is valid, it makes sure there is no other ant and only dirt or hill at the new position
+// Returns 1 if the move is valid
+int check_move(Map *map, int newRow, int newCol)
+{
+    if((index_cell(map, newRow, newCol)->type == CELL_DIRT || index_cell(map, newRow, newCol)->type == CELL_HILL) && index_ant(map, newRow, newCol)->type != ANT_LIVE)
+        return 1;
+
+    return 0;
 }
