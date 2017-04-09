@@ -105,5 +105,6 @@ void random_move_ant(Map *map, AntItem *antItem, int turn, int chances);
 int check_for_goal(Map *map, AntItem *antItem, int goalRadius);
 int check_for_goal_reachable(Map *map, AntItem *antItem, int goalRadius);
 void direction_for_goal(Map *map, AntItem *antItem, char *direction1, char *direction2);
+void count_surrounding_ants(Map *map, int row, int col, int radius, int *ownAnts, int *enemyAnts);
 
 #endif // _ANT_H_

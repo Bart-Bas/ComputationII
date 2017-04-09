@@ -8,7 +8,8 @@
 
 // AI parameters
 #define RANDOM_CHANCES 5
-#define GOAL_RADIUS 8
+#define GOAL_RADIUS 9
+#define ANT_SURROUNDING_RADIUS 6
 
 // Global variables
 Map *map;
@@ -101,6 +102,9 @@ void send_commands()
             Cell *goalCell = index_cell(map, antItem->rowGoal, antItem->colGoal);
             char direction1;
             char direction2;
+            int ownSurroundingAnts;
+            int enemySurroundingAnts;
+            count_surrounding_ants(map, antItem->row, antItem->col, ANT_SURROUNDING_RADIUS, &ownSurroundingAnts, &enemySurroundingAnts);
 
             // Check if goal is still valid
             if(((goalCell->type == CELL_HILL && goalCell->owner != 0) || goalCell->type == CELL_FOOD) && antItem->hasGoal == 1)
@@ -115,28 +119,32 @@ void send_commands()
                 direction_for_goal(map, antItem, &direction1, &direction2);
             }
 
-            // #1 Try to reach goal with direction 1
-            if(moveSuccessful == 0 && antItem->hasGoal == 1)
+            // Wait for help when in danger
+            if(ownSurroundingAnts > enemySurroundingAnts)
             {
-                moveSuccessful = move_ant(map, antItem, direction1, turn);
-            }
+                // #1 Try to reach goal with direction 1
+                if(moveSuccessful == 0 && antItem->hasGoal == 1)
+                {
+                    moveSuccessful = move_ant(map, antItem, direction1, turn);
+                }
 
-            // #2 Try to reach goal with directioin 2
-            if(moveSuccessful == 0 && antItem->hasGoal == 1)
-            {
-                moveSuccessful = move_ant(map, antItem, direction2, turn);
-            }
+                // #2 Try to reach goal with directioin 2
+                if(moveSuccessful == 0 && antItem->hasGoal == 1)
+                {
+                    moveSuccessful = move_ant(map, antItem, direction2, turn);
+                }
 
-            // #3 Try the same direction as the previous turn
-            if(moveSuccessful == 0)
-            {
-                moveSuccessful = move_ant(map, antItem, antItem->lastDirection, turn);
-            }
+                // #3 Try the same direction as the previous turn
+                if(moveSuccessful == 0)
+                {
+                    moveSuccessful = move_ant(map, antItem, antItem->lastDirection, turn);
+                }
 
-            // #4 Try a new random direction
-            if(moveSuccessful == 0)
-            {
-                random_move_ant(map, antItem, turn, RANDOM_CHANCES);
+                // #4 Try a new random direction
+                if(moveSuccessful == 0)
+                {
+                    random_move_ant(map, antItem, turn, RANDOM_CHANCES);
+                }
             }
 
             // Go to the next node

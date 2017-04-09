@@ -854,3 +854,27 @@ void direction_for_goal(Map *map, AntItem *antItem, char *direction1, char *dire
 
     return;
 }
+
+// Function that counts the amount of surrounding ants
+void count_surrounding_ants(Map *map, int row, int col, int radius, int *ownAnts, int *enemyAnts)
+{
+    *ownAnts = 0;
+    *enemyAnts = 0;
+    Ant *ant;
+
+    for(int y = (row - radius); y < (row + radius); y++)
+    {
+        for(int x = (col - radius); x < (col + radius); x++)
+        {
+            ant = index_ant(map, wrap_number(y, map->rows), wrap_number(x, map->cols));
+
+            if(ant->type == ANT_LIVE)
+            {
+                if(ant->owner == 0)
+                    (*ownAnts)++;
+                else
+                    (*enemyAnts)++;
+            }
+        }
+    }
+}
