@@ -4,7 +4,7 @@
 	gcc -o ./obj/ant.o ./src/ant.c -c -g
 ./lib/libant.a: ./obj/ant.o | ./lib
 	ar rcs ./lib/libant.a ./obj/ant.o
-antbot: ./src/main.c ./lib/libant.a directories | ./build
+antbot: ./src/main.c ./lib/libant.a | ./build
 	gcc -o ./build/antbot -static ./src/main.c -L./lib -I./include -lant -lm -g
 
 clean:
